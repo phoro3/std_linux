@@ -33,7 +33,7 @@ static void do_cat(FILE *f)
 {
 	int c;
 
-	while((c = fgetc(f) != EOF)){
+	while((c = fgetc(f)) != EOF){
 		if(putchar(c) < 0) exit(1);
 	}
 }

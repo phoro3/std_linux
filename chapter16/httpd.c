@@ -30,6 +30,12 @@ struct HTTPRequest{
 	long length;
 };
 
+struct FileInfo{
+	char *path;
+	long size;
+	int ok;
+};
+
 static void log_exit(char *fmt, ...);
 static void* xmalloc(size_t sz);
 typedef void (*sighandler_t)(int);
@@ -45,6 +51,9 @@ static void upcase(char *str);
 static struct HTTPHeaderField* read_header_field(FILE *in);
 static long content_length(struct HTTPRequest *req);
 static char* lookup_header_field_value(struct HTTPRequest *req, char *name);
+static struct FileInfo* get_fileinfo(char *docroot, char *urlpath);
+static void free_fileinfo(struct FileInfo *info);
+static char* build_fspath(char *docroot, char *urlpath);
 
 
 int main(int argc, char *argv[])
@@ -262,4 +271,39 @@ static char* lookup_header_field_value(struct HTTPRequest *req, char *name)
 		}
 	}
 	return NULL;
+}
+
+static struct FileInfo* get_fileinfo(char *docroot, char *urlpath){
+	struct FileInfo *info;
+	struct stat st;
+
+	info = xmalloc(sizeof(struct FileInfo));
+	info->path = build_fspath(docroot, urlpath);
+	info->ok = 0;
+
+	if (lstat(info->path, &st) < 0) {
+		return info;
+	}
+	if (!S_ISREG(st.st_mode)) {
+		return info;
+	}
+
+	info->ok = 1;
+	info->size = st.st_size;
+	return info;
+}
+
+static void free_fileinfo(struct FileInfo *info)
+{
+	free(info->path);
+	free(info);
+}
+
+static char* build_fspath(char *docroot, char *urlpath)
+{
+	char *path;
+
+	path = xmalloc(strlen(docroot) + 1 + strlen(urlpath));
+	sprintf(path, "%s/%s", docroot, urlpath);
+	return path;
 }

@@ -4,6 +4,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/time.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#include <netdb.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
@@ -11,6 +14,11 @@
 #include <stdarg.h>
 #include <ctype.h>
 #include <signal.h>
+#include <pwd.h>
+#include <grp.h>
+#include <syslog.h>
+#define _GNU_SOURCE
+#include <getopt.h>
 
 #define MAX_REQUEST_BODY_LENGTH (1024 * 1024)
 #define LINE_BUF_SIZE 4096
@@ -19,6 +27,7 @@
 #define HTTP_MINOR_VERSION 0
 #define BLOCK_BUF_SIZE 1024
 #define TIME_BUF_SIZE 64
+#define MAX_BACKLOG 5
 
 struct HTTPHeaderField{
 	char *name;
@@ -65,6 +74,8 @@ static char* guess_content_type(struct FileInfo *info);
 static void method_not_allowed(struct HTTPRequest *req, FILE *out);
 static void not_implemented(struct HTTPRequest *req, FILE *out);
 static void not_found(struct HTTPRequest *req, FILE *out);
+static int listen_socket(char *port);
+static void server_main(int server_fd, char *docroot);
 
 
 /*** Functions ***/
@@ -120,6 +131,11 @@ int main(int argc, char *argv[])
 		fprintf(stderr, USAGE, argv[0]);
 		exit(1);
 	}
+
+	install_signal_handlers();
+	server_fd = listen_socket(port);
+	server_main(server_fd, docroot);
+	exit(0);
 }
 
 static void log_exit(char *fmt, ...)
@@ -483,4 +499,68 @@ static void not_found(struct HTTPRequest *req, FILE *out)
 		fprintf(out, "</html>\r\n");
 	}
 	fflush(out);
+}
+
+static int listen_socket(char *port)
+{
+	struct addrinfo hints, *res, *ai;
+	int err;
+
+	memset(&hints, 0, sizeof(struct addrinfo));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_PASSIVE;
+
+	if ((err = getaddrinfo(NULL, port, &hints, &res)) != 0) {
+		log_exit(gai_strerror(err));
+	}
+
+	for (ai = res; ai; ai = ai->ai_next) {
+		int sock;
+
+		sock = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (sock < 0) {
+			continue;
+		}
+		if (bind(sock, ai->ai_addr, ai->ai_addrlen) < 0) {
+			close(sock);
+			continue;
+		}
+		if (listen(sock, MAX_BACKLOG) < 0) {
+			close(sock);
+			continue;
+		}
+		freeaddrinfo(res);
+		return sock;
+	}
+	log_exit("failed to listen socket");
+	return -1;
+}
+
+static void server_main(int server_fd, char *docroot)
+{
+	for (;;) {
+		struct sockaddr_storage addr;
+		socklen_t addrlen = sizeof addr;
+		int sock;
+		int pid;
+
+		sock = accept(server_fd, (struct sockaddr*) &addr, &addrlen);
+		if (sock < 0) {
+			log_exit("accept(2) failed:%s", strerror(errno));
+		}
+		
+		pid = fork();
+		if (pid < 0) {
+			exit(3);
+		}
+		if (pid == 0) {	/* child */
+			FILE *inf = fdopen(sock, "r");
+			FILE *outf = fdopen(sock, "w");
+
+			service(inf, outf, docroot);
+			exit(0);
+		}
+		close(sock);
+	}
 }

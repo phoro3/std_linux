@@ -78,6 +78,7 @@ static int listen_socket(char *port);
 static void server_main(int server_fd, char *docroot);
 static void detach_children();
 static void noop_handler(int sig);
+static void become_daemon(void);
 
 
 /*** Functions ***/
@@ -136,6 +137,9 @@ int main(int argc, char *argv[])
 
 	install_signal_handlers();
 	server_fd = listen_socket(port);
+	if (!debug_mode) {
+		become_daemon();
+	}
 	server_main(server_fd, docroot);
 	exit(0);
 }
@@ -568,7 +572,7 @@ static void server_main(int server_fd, char *docroot)
 	}
 }
 
-static void detach_children()
+static void detach_children(void)
 {
 	struct sigaction act;
 
@@ -583,4 +587,28 @@ static void detach_children()
 static void noop_handler(int sig)
 {
 	;
+}
+
+static void become_daemon(void)
+{
+	int n;
+
+	if (chdir("/") < 0) {
+		log_exit("chdir(2) failed: %s", strerror(errno));
+	}
+
+	freopen("/dev/null", "r", stdin);
+	freopen("/dev/null", "w", stdout);
+	freopen("/dev/null", "w", stderr);
+
+	n = fork();
+	if (n < 0) {
+		log_exit("fork(2) failed: %s", strerror(errno));
+	}
+	if (n != 0) {
+		_exit(0);
+	}
+	if (setsid() < 0) {
+		log_exit("setsid(2) failed: %s", strerror(errno));
+	}
 }

@@ -76,6 +76,8 @@ static void not_implemented(struct HTTPRequest *req, FILE *out);
 static void not_found(struct HTTPRequest *req, FILE *out);
 static int listen_socket(char *port);
 static void server_main(int server_fd, char *docroot);
+static void detach_children();
+static void noop_handler(int sig);
 
 
 /*** Functions ***/
@@ -163,6 +165,7 @@ static void* xmalloc(size_t sz)
 static void install_signal_handlers(void)
 {
 	trap_signal(SIGPIPE, signal_exit);
+	detach_children();
 }
 
 static void trap_signal(int sig, sighandler_t handler)
@@ -563,4 +566,21 @@ static void server_main(int server_fd, char *docroot)
 		}
 		close(sock);
 	}
+}
+
+static void detach_children()
+{
+	struct sigaction act;
+
+	act.sa_handler = noop_handler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = SA_RESTART | SA_NOCLDWAIT;
+	if (sigaction(SIGCHLD, &act, NULL) < 0) {
+		log_exit("sigaction() failed: %s", strerror(errno));
+	}
+}
+
+static void noop_handler(int sig)
+{
+	;
 }

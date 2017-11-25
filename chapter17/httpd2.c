@@ -28,6 +28,7 @@
 #define BLOCK_BUF_SIZE 1024
 #define TIME_BUF_SIZE 64
 #define MAX_BACKLOG 5
+#define DEFAULT_PORT "80"
 
 struct HTTPHeaderField{
 	char *name;
@@ -138,6 +139,7 @@ int main(int argc, char *argv[])
 	install_signal_handlers();
 	server_fd = listen_socket(port);
 	if (!debug_mode) {
+		openlog(SERVER_NAME, LOG_PID | LOG_NDELAY, LOG_DAEMON);
 		become_daemon();
 	}
 	server_main(server_fd, docroot);
@@ -149,8 +151,12 @@ static void log_exit(char *fmt, ...)
 	va_list ap;
 
 	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
-	fputc('\n', stderr);
+	if (debug_mode) {
+		vfprintf(stderr, fmt, ap);
+		fputc('\n', stderr);
+	} else {
+		vsyslog(LOG_ERR, fmt, ap);
+	}
 	va_end(ap);
 	exit(1);
 }
